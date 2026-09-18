@@ -1,6 +1,123 @@
 # Cloud-Init Provisioning with QEMU
 
-## 1. Download Ubuntu/Debian Cloud Image
+This guide covers provisioning Ubuntu/Debian VMs using **cloud-init** with QEMU, using either a NoCloud ISO or NoCloud-Net datasource.
+
+### Why Use This Approach
+
+Cloud-init is the **de facto standard** for initial cloud VM configuration. Unlike Ignition, it runs at every boot and can reconfigure the system over time. This makes it ideal for general-purpose servers, development environments, and any scenario where you need flexibility to change configuration after deployment. System administrators and DevOps engineers who manage fleets of diverse machines, need ad-hoc provisioning, or rely on existing cloud-native tooling use cloud-init daily.
+
+**Key concepts:**
+- **cloud-init** runs on first boot and can run again on subsequent boots
+- **NoCloud** datasources allow you to feed configuration via ISO or HTTP without internet access
+- The system is **mutable** — you can change users, packages, and config after deployment
+
+### Use Case
+
+Ideal for **traditional server provisioning**. Seed a cloud image with users, SSH keys, and runtime config via NoCloud ISO or NoCloud-Net. Best for general-purpose VMs, dev environments, and ad-hoc testing.
+
+```mermaid
+flowchart LR
+    A["seed/ meta-data<br>user-data<br>vendor-data"] -->|cloud-localds| B["seed.iso"]
+    A -->|HTTP server| C["NoCloud-Net"]
+    B -->|CD-ROM| D["QEMU"]
+    C -->|datasource| D
+    D --> E["Ubuntu/Debian<br>users, SSH keys,<br>hostname, packages"]
+```
+
+### Architecture
+
+```mermaid
+flowchart TB
+    subgraph CloudInitConfig["Cloud-Init Configuration"]
+        C1["seed-example/meta-data"]
+        C2["seed-example/user-data"]
+        C3["seed-example/vendor-data"]
+    end
+    subgraph Seed["Seed Output"]
+        C4["seed/ directory"]
+        C5["seed.iso"]
+    end
+    subgraph QEMU["QEMU VM"]
+        C6["ubuntu.img"]
+        C7["cloud-init"]
+    end
+    C1 --> C4
+    C2 --> C4
+    C3 --> C4
+    C4 --> C5
+    C5 -->|CD-ROM| C6
+    C4 -->|HTTP| C7
+    C7 --> C6
+    C6 --> D["Ubuntu/Debian<br>users, SSH keys,<br>hostname, packages"]
+```
+
+### NoCloud ISO vs NoCloud-Net
+
+```mermaid
+flowchart TB
+    subgraph ISO["NoCloud ISO"]
+        I1["seed/"] -->|cloud-localds| I2["seed.iso"]
+        I2 -->|CD-ROM| I3["QEMU + Ubuntu/Debian"]
+    end
+    subgraph Net["NoCloud-Net"]
+        N1["seed/"] -->|python -m http.server| N2["HTTP Server"]
+        N2 -->|datasource| N3["QEMU + Ubuntu/Debian"]
+    end
+    ISO
+    Net
+```
+
+### Full Workflow
+
+```mermaid
+flowchart TD
+    A["Copy seed-example to seed"] --> B["Edit meta-data, user-data, vendor-data"]
+    B --> C{Method?}
+    C -->|ISO| D["cloud-localds seed.iso user-data meta-data"]
+    D --> E["QEMU -drive seed.iso media=cdrom"]
+    C -->|Net| F["python -m http.server 8000 -d seed"]
+    F --> G["QEMU -smbios nocloud-net"]
+    E --> H["cloud-init applies user-data"]
+    G --> H
+    H --> I["users, SSH keys, hostname created"]
+    I --> J["Verify cloud-init status"]
+```
+
+## .example Files & seed-example
+
+This folder contains a `seed-example/` directory as a template. **You must create a copy of `seed-example` before editing it.** Do not edit files inside `seed-example/` directly.
+
+```powershell
+Copy-Item -Recurse .\seed-example .\seed
+```
+
+```bash
+cp -r seed-example seed
+```
+
+After copying, edit the files inside `seed/` with your actual values (passwords, SSH keys, hostnames, etc.).
+
+- `seed-example/meta-data` → Copy to `seed/meta-data`
+- `seed-example/user-data` → Copy to `seed/user-data`
+- `seed-example/vendor-data` → Copy to `seed/vendor-data`
+
+## .gitignore
+
+The following generated files and directories are **ignored** by `.gitignore` and should **not** be committed:
+
+| Pattern | Reason |
+| --- | --- |
+| `*.qcow2` | QEMU disk images |
+| `*.img` | Disk images |
+| `*.iso` | ISO images (including `seed.iso`) |
+| `seed/` | Active cloud-init seed directory |
+| `*.log` | QEMU log files |
+
+Only `seed-example/` and source configurations should be tracked by Git. Always copy `seed-example` to `seed/` before modifying.
+
+## Steps
+
+### 1. Download Ubuntu/Debian Cloud Image
 
 ### Ubuntu 24.04
 
@@ -26,15 +143,16 @@ Select the required Debian release and architecture.
 
 ---
 
-## 2. Create Cloud-Init Seed
+### 2. Create Cloud-Init Seed
 
 Create a directory for the seed files:
 
-```text
-seed/
-├── meta-data
-├── user-data
-└── vendor-data
+```mermaid
+mindmap
+  root(("seed/"))
+    meta-data
+    user-data
+    vendor-data
 ```
 
 ### `meta-data`
@@ -75,7 +193,7 @@ users:
 
 ---
 
-## 3. Generate an Encrypted Password Hash
+### 3. Generate an Encrypted Password Hash
 
 Generate a SHA-512 crypt password hash using OpenSSL:
 
@@ -234,33 +352,28 @@ This tells cloud-init to use the NoCloud-Net datasource and retrieve the seed da
 
 ### NoCloud ISO
 
-```text
-QEMU
- │
- ├── ubuntu.img
- │
- └── seed.iso
-       ├── meta-data
-       ├── user-data
-       └── vendor-data
+```mermaid
+flowchart TB
+    QEMU["QEMU"]
+    subgraph ISO["seed.iso CD-ROM"]
+        IM["meta-data"]
+        UD["user-data"]
+        VD["vendor-data"]
+    end
+    QEMU -->|CD-ROM| ISO
 ```
 
 ### NoCloud-Net
 
-```text
-QEMU
- │
- ├── ubuntu.img
- │
- └── Network
-       │
-       ▼
-   HTTP Server
-       │
-       └── seed/
-            ├── meta-data
-            ├── user-data
-            └── vendor-data
+```mermaid
+flowchart TB
+    QEMU["QEMU"]
+    subgraph NET["HTTP Server"]
+        IM["meta-data"]
+        UD["user-data"]
+        VD["vendor-data"]
+    end
+    QEMU -->|smbios nocloud-net| NET
 ```
 
 For repeated development and testing, **NoCloud-Net is convenient because you can modify `user-data` without rebuilding `seed.iso` each time**.
@@ -328,4 +441,12 @@ This is useful for **QEMU-level errors**, but cloud-init troubleshooting should 
 ```text
 /var/log/cloud-init.log
 /var/log/cloud-init-output.log
+```
+
+## References
+
+```text
+https://cloudinit.readthedocs.io/
+https://cloud.debian.org/images/cloud/
+https://cloud-images.ubuntu.com/
 ```
