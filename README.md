@@ -47,13 +47,16 @@ System administrators and DevOps engineers need to provision VMs consistently, r
 
 ### Ignition (Fedora CoreOS)
 
-Ideal for **immutable, declarative infrastructure**. Define the entire system state in a Butane config, convert to Ignition, and the OS applies it on first boot. Best for container-heavy workloads, Kubernetes nodes, and repeatable VM templates.
+Ideal for **immutable, declarative infrastructure**. Define the entire system state in a Butane config, convert to Ignition, and the OS applies it on first boot. Supports three delivery methods: `fw_cfg`, HTTP, or embedded ISO via `coreos-installer`. Best for container-heavy workloads, Kubernetes nodes, and repeatable VM templates.
 
 ```mermaid
 flowchart LR
     A["Butane (.bu)"] -->|butane --strict| B["Ignition (.ign)"]
     B -->|fw_cfg| C["Fedora CoreOS"]
-    C --> D["users, SSH keys,<br>disk setup, systemd"]
+    B -->|HTTP| C
+    B -->|coreos-installer| D["fcos-ignition.iso"]
+    D -->|CD-ROM| C
+    C --> E["users, SSH keys, disk setup, systemd"]
 ```
 
 ### Cloud-Init (Ubuntu/Debian)
@@ -79,15 +82,26 @@ flowchart TB
     end
     subgraph Butane["Fedora CoreOS + Butane/Ignition"]
         B1["Butane .bu"] --> B2["Ignition .ign"]
-        B2 --> B3["QEMU + Fedora CoreOS"]
+        B2 -->|fw_cfg| B3["QEMU"]
+        B2 -->|HTTP| B3
+        B2 -->|coreos-installer| B4["fcos-ignition.iso"]
+        B4 -->|CD-ROM| B3
     end
     subgraph CloudInit["Ubuntu/Debian + cloud-init"]
         C1["seed-example/"] --> C2["seed/ or seed.iso"]
-        C2 --> C3["QEMU + Ubuntu/Debian"]
+        C2 -->|CD-ROM or HTTP| C3["QEMU"]
     end
     A <--> Butane
     B <--> CloudInit
 ```
+
+### Three Methods Compared
+
+| Method | Fedora CoreOS | Ubuntu/Debian |
+| --- | --- | --- |
+| **fw_cfg** | `qemu -fw_cfg file=root.ign` | N/A |
+| **HTTP** | `py -m http.server` + `bootstrap.bu` | `python -m http.server` + `seed/` |
+| **ISO/CD-ROM** | `coreos-installer iso ignition embed` | `cloud-localds seed.iso` |
 
 ## .example Files
 
