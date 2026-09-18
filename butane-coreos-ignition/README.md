@@ -36,15 +36,19 @@ flowchart TB
     subgraph IgnitionConfig["Ignition Config"]
         B4["root.ign"]
         B5["bootstrap.ign"]
+        B6["fcos-ignition.iso"]
     end
     subgraph QEMU["QEMU VM"]
-        B6["fcos.qcow2"]
-        B7["Fedora CoreOS"]
+        B7["fcos.qcow2"]
+        B8["Fedora CoreOS"]
     end
     ButaneConfig --> ButaneEngine --> IgnitionConfig --> QEMU
+    B4 -->|fw_cfg| B8
+    B5 -->|HTTP| B8
+    B6 -->|CD-ROM| B8
 ```
 
-### Direct vs HTTP Ignition Flow
+### Direct, HTTP, and ISO Ignition Flow
 
 ```mermaid
 flowchart TB
@@ -58,8 +62,14 @@ flowchart TB
         H3 -->|HTTP GET| H4["root.ign"]
         H4 --> H5["Fedora CoreOS"]
     end
+    subgraph ISO["ISO Ignition"]
+        I1["root.ign"] -->|coreos-installer| I2["fcos-ignition.iso"]
+        I2 -->|CD-ROM| I3["QEMU"]
+        I3 --> I4["Fedora CoreOS"]
+    end
     Direct
     HTTP
+    ISO
 ```
 
 ### Full Workflow
@@ -69,16 +79,20 @@ flowchart TD
     A["butane --version"] --> B["Create root.bu"]
     B --> C["butane --strict -p root.bu -o root.ign"]
     C --> D["Copy fcos.qcow2 to fcos.qcow2"]
-    D --> E["QEMU with fw_cfg=root.ign"]
-    E --> F{SSH}
-    F -->|Direct| G["ssh -p 2222 user@127.0.0.1"]
-    E --> H{HTTP?}
-    H -->|Yes| I["py -m http.server 8000"]
-    I --> J["Create bootstrap.bu"]
-    J --> K["butane --strict bootstrap.bu -o bootstrap.ign"]
-    K --> L["QEMU with bootstrap.ign"]
-    L --> M["Ignition fetches root.ign via HTTP"]
-    M --> N["Fedora CoreOS"]
+    D --> E{Method?}
+    E -->|fw_cfg| F["QEMU with fw_cfg=root.ign"]
+    F --> G{SSH}
+    G -->|Direct| H["ssh -p 2222 user@127.0.0.1"]
+    E -->|ISO| I["coreos-installer iso ignition embed"]
+    I --> J["fcos-ignition.iso"]
+    J --> K["QEMU with CD-ROM"]
+    K --> L["Fedora CoreOS"]
+    E -->|HTTP| M["py -m http.server 8000"]
+    M --> N["Create bootstrap.bu"]
+    N --> O["butane --strict bootstrap.bu -o bootstrap.ign"]
+    O --> P["QEMU with bootstrap.ign"]
+    P --> Q["Ignition fetches root.ign via HTTP"]
+    Q --> R["Fedora CoreOS"]
 ```
 
 ## .example Files
@@ -110,6 +124,7 @@ The following generated files are **ignored** by `.gitignore` and should **not**
 | `*.ign` | Generated Ignition configs |
 | `*.bu` | Generated Butane configs |
 | `*.log` | QEMU log files |
+| `*.iso` | Generated ISO images (including `fcos-ignition.iso`) |
 
 Only `.example` files and source configurations should be tracked by Git.
 
@@ -320,7 +335,59 @@ curl http://10.126.90.210:8000/root.ign
 
 ---
 
-### 9. Run QEMU with HTTP Ignition
+### 9. ISO Ignition with coreos-installer
+
+Instead of passing Ignition via `fw_cfg` or HTTP, you can embed it directly into an ISO image using `coreos-installer`. This is the cleanest approach — the Ignition config travels with the VM image, just like cloud-init's `seed.iso`.
+
+Generate:
+
+```powershell
+coreos-installer iso ignition embed -i .\root.ign -o .\fcos-ignition.iso
+```
+
+```bash
+coreos-installer iso ignition embed -i ./root.ign -o ./fcos-ignition.iso
+```
+
+Result:
+
+```text
+fcos-ignition.iso
+```
+
+Run QEMU with the ISO:
+
+```powershell
+qemu-system-x86_64 `
+  -m 4096 `
+  -smp 2 `
+  -drive file=.\fcos.qcow2,format=qcow2 `
+  -drive file=.\fcos-ignition.iso,format=raw,media=cdrom `
+  -nic user,model=virtio-net-pci
+```
+
+```bash
+qemu-system-x86_64 \
+  -m 4096 \
+  -smp 2 \
+  -drive file=./fcos.qcow2,format=qcow2 \
+  -drive file=./fcos-ignition.iso,format=raw,media=cdrom \
+  -nic user,model=virtio-net-pci
+```
+
+Flow:
+
+```mermaid
+flowchart LR
+    A["root.ign"] -->|coreos-installer embed| B["fcos-ignition.iso"]
+    B -->|CD-ROM| C["QEMU"]
+    C --> D["Ignition"]
+    D --> E["Fedora CoreOS"]
+```
+
+---
+
+### 10. Run QEMU with HTTP Ignition
 
 ```powershell
 qemu-system-x86_64 `
@@ -352,7 +419,7 @@ flowchart LR
 
 ---
 
-### 10. Verify Ignition
+### 11. Verify Ignition
 
 ```bash
 systemctl status ignition-firstboot-complete.service
@@ -371,7 +438,7 @@ getent passwd admin
 
 ---
 
-### 11. Reset VM
+### 12. Reset VM
 
 Delete the working disk:
 
@@ -395,7 +462,7 @@ cp fedora-coreos-bootstrap.qcow2 fcos.qcow2
 
 ---
 
-### 12. Optional QEMU Logs
+### 13. Optional QEMU Logs
 
 ```powershell
 qemu-system-x86_64 `
