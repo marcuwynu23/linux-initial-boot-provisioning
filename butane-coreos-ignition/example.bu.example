@@ -1,0 +1,11 @@
+variant: fcos
+version: 1.6.0
+
+passwd:
+  users:
+  - name: <username>
+    password_hash: "<hash_password>"
+    groups:
+    - wheel
+    ssh_authorized_keys:
+    - <ssh_public_key>

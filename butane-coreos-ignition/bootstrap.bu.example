@@ -1,0 +1,7 @@
+variant: fcos
+version: 1.6.0
+
+ignition:
+  config:
+    replace:
+      source: http://<host | ip>:<port>/example.ign
