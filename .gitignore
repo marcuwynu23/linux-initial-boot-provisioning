@@ -1,3 +1,8 @@
 *.qcow2
 *.img
 *.iso
+*.ign
+seed/
+*.bu
+
+*.log
