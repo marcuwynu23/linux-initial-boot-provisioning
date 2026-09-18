@@ -1,0 +1,17 @@
+#cloud-config
+
+hostname: <hostname>
+
+users:
+- name: <username>
+  groups:
+  - sudo
+  lock_passwd: false
+  ssh_authorized_keys:
+  - <ssh_public_key>
+
+- name: <username>
+  groups:
+  - sudo
+  lock_passwd: false
+  passwd: <hash_password>
